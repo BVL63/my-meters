@@ -1,0 +1,42 @@
+name: Apply Supabase SQL migrations
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply approved migrations
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${DATABASE_URL:-}" ]]; then
+            echo "::error::Set SUPABASE_DB_URL in repository Actions secrets"
+            exit 1
+          fi
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE TABLE IF NOT EXISTS public.app_schema_migrations (
+            filename text PRIMARY KEY,
+            applied_at timestamptz NOT NULL DEFAULT now()
+          );
+          SQL
+          for file in sql/migrations/*.sql; do
+            [[ -f "$file" ]] || continue
+            filename="${file##*/}"
+            already=$(psql "$DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c "SELECT EXISTS(SELECT 1 FROM public.app_schema_migrations WHERE filename = '${filename}')")
+            if [[ "$already" == "t" ]]; then
+              echo "Already applied: $filename"
+              continue
+            fi
+            echo "Applying: $filename"
+            { echo "BEGIN;"; cat "$file"; printf "\nINSERT INTO public.app_schema_migrations(filename) VALUES ('%s');\nCOMMIT;\n" "$filename"; } | psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1
+          done
