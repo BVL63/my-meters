@@ -74,24 +74,24 @@ async function renderWaterAnalysis(){
  const max=Math.max(1,...totals.map(x=>x.total));
  for(const item of totals){
   const col=document.createElement('div');col.className='analysis-month';
-  const number=document.createElement('div');number.className='analysis-total';number.textContent=item.valid?item.total.toFixed(1).replace('.',','):'—';
+  const number=document.createElement('div');number.className='analysis-total';number.textContent=item.valid?Math.round(item.total).toString():'—';
   const stack=document.createElement('div');stack.className='analysis-stack';
   if(item.valid){const cold=document.createElement('div');cold.className='analysis-cold';cold.style.height=(item.cold/max*100)+'%';const hot=document.createElement('div');hot.className='analysis-hot';hot.style.height=(item.hot/max*100)+'%';stack.append(hot,cold);col.title=months[item.month-1]+': ГВС '+item.hot.toFixed(3)+' м³, ХВС '+item.cold.toFixed(3)+' м³'}
   const label=document.createElement('div');label.className='analysis-month-label';label.textContent=months[item.month-1].slice(0,3);
   col.append(number,stack,label);chart.append(col);
  }
- summary.textContent=complete?'За '+complete+' мес.: ХВС '+totalCold.toFixed(3).replace('.',',')+' м³ + ГВС '+totalHot.toFixed(3).replace('.',',')+' м³ = '+(totalCold+totalHot).toFixed(3).replace('.',',')+' м³':'За этот год нет достаточных данных для расчёта общего расхода.';
+ summary.textContent=complete?'За '+complete+' мес.: ХВС '+Math.round(totalCold).toString()+' м³ + ГВС '+Math.round(totalHot).toString()+' м³ = '+Math.round(totalCold+totalHot).toString()+' м³':'За этот год нет достаточных данных для расчёта общего расхода.';
  const electricity=totals.filter(x=>x.electric!==null),maxElectric=Math.max(1,...electricity.map(x=>x.electric));
  for(const item of totals){
   const col=document.createElement('div');col.className='analysis-month';
-  const number=document.createElement('div');number.className='analysis-total';number.textContent=item.electric===null?'—':item.electric.toFixed(1).replace('.',',');
+  const number=document.createElement('div');number.className='analysis-total';number.textContent=item.electric===null?'—':Math.round(item.electric).toString();
   const stack=document.createElement('div');stack.className='analysis-stack';
-  if(item.electric!==null){const bar=document.createElement('div');bar.className='analysis-electric';bar.style.height=(item.electric/maxElectric*100)+'%';stack.append(bar);col.title=months[item.month-1]+': '+item.electric.toFixed(1).replace('.',',')+' кВт·ч'}
+  if(item.electric!==null){const bar=document.createElement('div');bar.className='analysis-electric';bar.style.height=(item.electric/maxElectric*100)+'%';stack.append(bar);col.title=months[item.month-1]+': '+Math.round(item.electric).toString()+' кВт·ч'}
   const label=document.createElement('div');label.className='analysis-month-label';label.textContent=months[item.month-1].slice(0,3);
   col.append(number,stack,label);electricChart.append(col);
  }
  const sumElectric=electricity.reduce((a,x)=>a+x.electric,0);
- electricSummary.textContent=electricity.length?'За '+electricity.length+' мес.: '+sumElectric.toFixed(1).replace('.',',')+' кВт·ч · в среднем '+(sumElectric/electricity.length).toFixed(1).replace('.',',')+' кВт·ч/мес.':'За этот год нет достаточных данных для расчёта расхода электроэнергии.';
+ electricSummary.textContent=electricity.length?'За '+electricity.length+' мес.: '+Math.round(sumElectric).toString()+' кВт·ч · в среднем '+Math.round(sumElectric/electricity.length).toString()+' кВт·ч/мес.':'За этот год нет достаточных данных для расчёта расхода электроэнергии.';
 
 }
 const transferFlagKey='mm-transfer-flags-v1';let syncedTransferFlags=null;let transferSyncAvailable=false;
