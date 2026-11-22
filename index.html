@@ -40,7 +40,40 @@ $('openVcSms').onclick=()=>{toggle('journal',false);toggle('vcSms',true);$('vcSm
 $('vcSmsBack').onclick=()=>{toggle('vcSms',false);showJournal()};
 $('vcSmsPeriod').onchange=renderVcSms;
 $('vcSmsAccount').oninput=()=>{localStorage.setItem('mm-vc-account',$('vcSmsAccount').value);renderVcSms()};
-const transferFlagKey='mm-transfer-flags-v1';function transferFlags(){try{return JSON.parse(localStorage.getItem(transferFlagKey)||'{}')||{}}catch(e){return {}}}function appendTransferFlag(row,recipient,resource,period,reading){if(!reading)return;const key=[recipient,resource,period].join(':');const flags=transferFlags();const value=Number(reading.value);const wrap=document.createElement('label');wrap.style.cssText='display:flex;align-items:center;gap:4px;margin:0;cursor:pointer';const check=document.createElement('input');check.type='checkbox';check.style.width='19px';check.style.height='19px';check.style.margin='0';check.checked=!!flags[key]&&Number(flags[key].value)===value;const label=document.createElement('span');label.textContent=check.checked?'✓':'—';check.onchange=()=>{const f=transferFlags();if(check.checked)f[key]={value,markedAt:new Date().toISOString()};else delete f[key];localStorage.setItem(transferFlagKey,JSON.stringify(f));label.textContent=check.checked?'✓':'—'};wrap.title='Отметить передачу показаний';wrap.append(check,label);row.append(wrap)}
+const transferFlagKey='mm-transfer-flags-v1';let syncedTransferFlags=null;let transferSyncAvailable=false;
+function transferFlags(){try{return JSON.parse(localStorage.getItem(transferFlagKey)||'{}')||{}}catch(e){return {}}}
+async function loadTransferFlags(period){
+ syncedTransferFlags=null;transferSyncAvailable=false;
+ const {data,error}=await db.from('transfer_flags').select('recipient,resource,period,meter_id,value').eq('period',period);
+ if(error){if(!/transfer_flags|schema cache|does not exist/i.test(error.message))console.warn('Transfer flags:',error.message);return}
+ transferSyncAvailable=true;syncedTransferFlags={};
+ for(const f of data||[])syncedTransferFlags[[f.recipient,f.resource,f.period,String(f.meter_id)].join(':')]=Number(f.value);
+}
+function appendTransferFlag(row,recipient,resource,period,reading,meter){
+ if(!reading||!meter)return;
+ const key=[recipient,resource,period,String(meter.id)].join(':');
+ const legacyKey=[recipient,resource,period].join(':');
+ const value=Number(reading.value),flags=transferFlags();
+ const wrap=document.createElement('label');wrap.style.cssText='display:flex;align-items:center;gap:4px;margin:0;cursor:pointer';
+ wrap.title=transferSyncAvailable?'Отметка синхронизируется через Supabase':'Отметка хранится только на этом устройстве до создания таблицы Supabase';
+ const check=document.createElement('input');check.type='checkbox';check.style.cssText='width:19px;height:19px;margin:0';
+ const isMarked=transferSyncAvailable?Number(syncedTransferFlags?.[key])===value&&Object.hasOwn(syncedTransferFlags,key):Number(flags[key]?.value??flags[legacyKey]?.value)===value&&(!!flags[key]||!!flags[legacyKey]);
+ check.checked=isMarked;
+ const label=document.createElement('span');label.textContent='';
+ check.onchange=async()=>{
+  const checked=check.checked;check.disabled=true;
+  if(transferSyncAvailable){
+   const query=checked?db.from('transfer_flags').upsert({recipient,resource,period,meter_id:String(meter.id),value},{onConflict:'user_id,recipient,resource,period,meter_id'}):db.from('transfer_flags').delete().eq('recipient',recipient).eq('resource',resource).eq('period',period).eq('meter_id',String(meter.id));
+   const {error}=await query;
+   if(error){check.checked=!checked;alert('Не удалось сохранить отметку: '+error.message)}
+   else if(checked)syncedTransferFlags[key]=value;else delete syncedTransferFlags[key];
+  }else{
+   const f=transferFlags();if(checked)f[key]={value,markedAt:new Date().toISOString()};else delete f[key];delete f[legacyKey];localStorage.setItem(transferFlagKey,JSON.stringify(f));
+  }
+  check.disabled=false;
+ };
+ wrap.append(check,label);row.append(wrap)
+}
 async function renderVcSms(){
  const root=$('vcSmsRows'),dekRoot=$('dekTransferRows');root.replaceChildren();dekRoot.replaceChildren();
  const period=$('vcSmsPeriod').value;if(!/^\d{4}-\d{2}$/.test(period))return;
@@ -48,6 +81,7 @@ async function renderVcSms(){
  const nextPeriod=next.getFullYear()+'-'+String(next.getMonth()+1).padStart(2,'0')+'-01';
  const {data,error}=await db.from('readings').select('meter_id,period,value').gte('period',period+'-01').lt('period',nextPeriod).order('period',{ascending:false});
  if(error){root.textContent='Ошибка загрузки: '+error.message;return}
+ await loadTransferFlags(period);
  const account=$('vcSmsAccount').value.replace(/\D/g,'');
  function addRow(container,recipient,resource){
   const meter=allMeters.find(m=>m.resource===resource&&m.active);
@@ -72,7 +106,7 @@ async function renderVcSms(){
    if(!btn.disabled)btn.onclick=()=>{if(confirm('ДЭК: проверьте номер счётчика по квитанции.\n'+msg+'\nОткрыть SMS?'))window.location.href='sms:+79247999557&body='+encodeURIComponent(msg)};
   }
   const status=document.createElement('div');status.className='transfer-status';
-  appendTransferFlag(status,recipient,resource,period,reading);
+  appendTransferFlag(status,recipient,resource,period,reading,meter);
   row.append(info,value,btn,status);container.append(row);
  }
  for(const resource of ['cold','hot'])addRow(root,'vc',resource);
